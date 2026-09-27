@@ -1,6 +1,7 @@
 import { MoodRecord } from '../core/models';
 import { MoodRepositoryPort } from '../ports/mood-repository.port';
 import { createRecordFromTag } from '../core/meteorology-engine';
+import { normalizeDate, isValidDateKey, daysAgoKey } from '../core/date-utils';
 
 const STORAGE_KEY = 'mood_meteorology_records_v1';
 
@@ -13,7 +14,11 @@ export class LocalStorageMoodAdapter implements MoodRepositoryPort {
     try {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        // 统一日期来源：旧版本 / 损坏数据里的非法日期在这里一次性回退到今天，
+        // 不把脏日期带入排序与历史趋势计算。
+        return parsed
+          .filter((item): item is MoodRecord => item && typeof item === 'object')
+          .map(item => (isValidDateKey(item.date) ? item : { ...item, date: normalizeDate(item.date) }));
       }
     } catch {
       // ignore
@@ -23,9 +28,12 @@ export class LocalStorageMoodAdapter implements MoodRepositoryPort {
 
   add(record: MoodRecord): void {
     const records = this.getAll();
+    // 入库前再次归一日期，保证“同一天只保留一条”的比较口径一致。
+    const incomingDate = normalizeDate(record.date);
+    const normalizedRecord: MoodRecord = { ...record, date: incomingDate };
     // remove existing for same date if any
-    const filtered = records.filter(r => r.date !== record.date);
-    filtered.push(record);
+    const filtered = records.filter(r => normalizeDate(r.date) !== incomingDate);
+    filtered.push(normalizedRecord);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
   }
 
@@ -52,12 +60,10 @@ export class LocalStorageMoodAdapter implements MoodRepositoryPort {
       { tag: '局部有焦虑', intensity: 7, note: '新的一周即将到来，局部依然盘旋着对未知的轻度担忧', daysAgo: 0 }
     ];
 
-    const now = new Date();
-    const records: MoodRecord[] = sampleSequence.map(item => {
-      const d = new Date(now.getTime() - item.daysAgo * 86400000);
-      const dateStr = d.toISOString().split('T')[0];
-      return createRecordFromTag(item.tag, item.intensity, item.note, dateStr);
-    });
+    const records: MoodRecord[] = sampleSequence.map(item =>
+      // 按本地日历日推进，不依赖毫秒差：午夜、跨时区、夏令时切换都不会错天。
+      createRecordFromTag(item.tag, item.intensity, item.note, daysAgoKey(item.daysAgo))
+    );
 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
     return records;

@@ -6,6 +6,7 @@ import {
   ExtremeWeatherAlert,
   SynopticChartData
 } from './models';
+import { normalizeDate, todayKey, compareDate, formatDisplayDate } from './date-utils';
 
 export const TAG_METAS: Record<string, MoodTagMeta> = {
   '晴空万里': {
@@ -106,7 +107,7 @@ export function createRecordFromTag(tag: string, intensity: number, note: string
 
   return {
     id: `rec-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-    date: dateStr || new Date().toISOString().split('T')[0],
+    date: normalizeDate(dateStr || todayKey()),
     tag,
     intensity,
     note: note.trim() || '平静观测记录',
@@ -120,7 +121,9 @@ export function createRecordFromTag(tag: string, intensity: number, note: string
 }
 
 export function evaluateSynopticSystem(records: MoodRecord[]): SynopticChartData {
-  const sorted = [...records].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  // 统一按本地日历日排序：compareDate 内部会把非法日期回退到今天，
+  // 不会再出现 NaN 时间戳导致顺序漂移、近 7 日趋势取错窗口。
+  const sorted = [...records].sort((a, b) => compareDate(a.date, b.date));
   const currentRecord = sorted[sorted.length - 1] || createRecordFromTag('阴转多云', 5, '默认天气');
 
   const totalPressure = sorted.reduce((acc, r) => acc + r.pressureHpa, 0);
@@ -275,7 +278,7 @@ export function evaluateSynopticSystem(records: MoodRecord[]): SynopticChartData
 
   return {
     chartId: `SYN-${Date.now().toString(36).toUpperCase()}`,
-    generatedDate: new Date().toLocaleDateString('zh-CN'),
+    generatedDate: formatDisplayDate(),
     currentRecord,
     records: sorted,
     averagePressure: avgPressure,
