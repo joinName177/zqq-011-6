@@ -1,6 +1,7 @@
 import { MoodRecord } from '../core/models';
 import { MoodRepositoryPort } from '../ports/mood-repository.port';
 import { createRecordFromTag } from '../core/meteorology-engine';
+import { addDaysToDateKey, normalizeDateKey, todayDateKey } from '../core/date-utils';
 
 const STORAGE_KEY = 'mood_meteorology_records_v1';
 
@@ -13,12 +14,31 @@ export class LocalStorageMoodAdapter implements MoodRepositoryPort {
     try {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        const sanitized = this.sanitizeRecords(parsed);
+        if (sanitized.length > 0) {
+          return sanitized;
+        }
       }
     } catch {
       // ignore
     }
     return this.resetToSample();
+  }
+
+  /**
+   * 清洗持久化数据：结构残缺的条目直接丢弃；
+   * 非法日期统一回退到本地今天，并按日期去重（每天只保留一条观测）。
+   */
+  private sanitizeRecords(input: unknown[]): MoodRecord[] {
+    const byDate = new Map<string, MoodRecord>();
+    for (const item of input) {
+      if (!item || typeof item !== 'object') continue;
+      const record = item as MoodRecord;
+      if (typeof record.id !== 'string' || typeof record.tag !== 'string') continue;
+      const date = normalizeDateKey(record.date);
+      byDate.set(date, { ...record, date });
+    }
+    return [...byDate.values()];
   }
 
   add(record: MoodRecord): void {
@@ -52,10 +72,10 @@ export class LocalStorageMoodAdapter implements MoodRepositoryPort {
       { tag: '局部有焦虑', intensity: 7, note: '新的一周即将到来，局部依然盘旋着对未知的轻度担忧', daysAgo: 0 }
     ];
 
-    const now = new Date();
+    const today = todayDateKey();
     const records: MoodRecord[] = sampleSequence.map(item => {
-      const d = new Date(now.getTime() - item.daysAgo * 86400000);
-      const dateStr = d.toISOString().split('T')[0];
+      // 日历日推算（而非 ±86400000ms + UTC 转换），跨午夜/时区/夏令时均不错位
+      const dateStr = addDaysToDateKey(today, -item.daysAgo);
       return createRecordFromTag(item.tag, item.intensity, item.note, dateStr);
     });
 

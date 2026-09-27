@@ -1,5 +1,12 @@
 export type AlertLevel = '蓝色' | '黄色' | '橙色' | '红色';
 
+/**
+ * 本地日历日（YYYY-MM-DD）。
+ * 全系统统一的日期口径：只能由 `core/date-utils` 生成、校验与推算，
+ * 禁止 UTC 换算（toISOString）与毫秒加减（±86400000）。
+ */
+export type LocalDateKey = string;
+
 export interface MoodTagMeta {
   tag: string;
   category: 'sunny' | 'cloudy' | 'rain' | 'storm' | 'snow' | 'fog';
@@ -13,7 +20,7 @@ export interface MoodTagMeta {
 
 export interface MoodRecord {
   id: string;
-  date: string; // YYYY-MM-DD
+  date: LocalDateKey; // YYYY-MM-DD，本地日历日
   tag: string;
   intensity: number; // 1 - 10
   note: string;
@@ -50,14 +57,14 @@ export interface ExtremeWeatherAlert {
   level: AlertLevel;
   type: string;
   title: string;
-  issuedTime: string;
+  issuedTime: LocalDateKey;
   triggerCause: string;
   defenseProtocol: string[]; // 防灾自愈指南
 }
 
 export interface SynopticChartData {
   chartId: string;
-  generatedDate: string;
+  generatedDate: LocalDateKey;
   currentRecord: MoodRecord;
   records: MoodRecord[];
   averagePressure: number;

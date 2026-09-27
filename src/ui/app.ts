@@ -1,5 +1,6 @@
 import { SynopticChartData, MoodRecord } from '../core/models';
 import { TAG_METAS } from '../core/meteorology-engine';
+import { formatDateKeyLabel } from '../core/date-utils';
 
 export interface WeatherUIHandlers {
   onOpenLogModal: () => void;
@@ -193,7 +194,7 @@ export function renderWeatherApp(
                 .map(
                   r => `
                 <div class="record-pill ${r.id === cur.id ? 'active' : ''}" data-id="${r.id}">
-                  <div class="pill-date">${r.date.slice(5)}</div>
+                  <div class="pill-date">${formatDateKeyLabel(r.date)}</div>
                   <div class="pill-icon">${(TAG_METAS[r.tag] || TAG_METAS['阴转多云']).icon}</div>
                   <div class="pill-tag">${esc(r.tag)}</div>
                   <div class="pill-pressure">${r.pressureHpa} hPa</div>

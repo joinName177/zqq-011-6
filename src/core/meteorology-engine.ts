@@ -6,6 +6,7 @@ import {
   ExtremeWeatherAlert,
   SynopticChartData
 } from './models';
+import { compareDateKeys, diffDateKeysDays, isValidDateKey, normalizeDateKey, todayDateKey } from './date-utils';
 
 export const TAG_METAS: Record<string, MoodTagMeta> = {
   '晴空万里': {
@@ -106,7 +107,8 @@ export function createRecordFromTag(tag: string, intensity: number, note: string
 
   return {
     id: `rec-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-    date: dateStr || new Date().toISOString().split('T')[0],
+    // 日期只认统一来源：缺省或非法日期回退到本地今天，绝不用 UTC 换算
+    date: normalizeDateKey(dateStr),
     tag,
     intensity,
     note: note.trim() || '平静观测记录',
@@ -120,11 +122,13 @@ export function createRecordFromTag(tag: string, intensity: number, note: string
 }
 
 export function evaluateSynopticSystem(records: MoodRecord[]): SynopticChartData {
-  const sorted = [...records].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  // 安全比较器排序：非法日期稳定置前（视为最旧），不产生 NaN，顺序可复现
+  const sorted = [...records].sort((a, b) => compareDateKeys(a.date, b.date));
   const currentRecord = sorted[sorted.length - 1] || createRecordFromTag('阴转多云', 5, '默认天气');
 
   const totalPressure = sorted.reduce((acc, r) => acc + r.pressureHpa, 0);
-  const avgPressure = Math.round(totalPressure / sorted.length);
+  // 空序列时以当前（默认）记录气压为准，避免 0/0 = NaN 污染系统判定
+  const avgPressure = sorted.length > 0 ? Math.round(totalPressure / sorted.length) : currentRecord.pressureHpa;
 
   // Barometric zones analysis
   let equatorial = 0; // high intensity + low/moderate pressure
@@ -179,8 +183,16 @@ export function evaluateSynopticSystem(records: MoodRecord[]): SynopticChartData
     }
   ];
 
-  // Monsoon trend analysis
-  const recentSlice = sorted.slice(-7);
+  // Monsoon trend analysis —— 历史趋势窗口：以当前记录日期为锚点、向前取最近 7 个日历日，
+  // 而不是“最后 7 条记录”（记录稀疏或有缺口时两者并不等价，后者会把趋势算到错误的区间）。
+  const TREND_WINDOW_DAYS = 7;
+  const anchorDate = normalizeDateKey(currentRecord.date);
+  const windowSlice = sorted.filter(r => {
+    if (!isValidDateKey(r.date)) return false; // 无法定位到日历日的记录不参与趋势
+    const gapDays = diffDateKeysDays(anchorDate, r.date);
+    return gapDays >= 0 && gapDays < TREND_WINDOW_DAYS;
+  });
+  const recentSlice = windowSlice.length > 0 ? windowSlice : [currentRecord];
   const avgIntensity = recentSlice.reduce((s, r) => s + r.intensity, 0) / (recentSlice.length || 1);
   const hasStorm = recentSlice.some(r => r.pressureHpa < 985);
 
@@ -275,7 +287,8 @@ export function evaluateSynopticSystem(records: MoodRecord[]): SynopticChartData
 
   return {
     chartId: `SYN-${Date.now().toString(36).toUpperCase()}`,
-    generatedDate: new Date().toLocaleDateString('zh-CN'),
+    // 与记录日期同一来源、同一格式（YYYY-MM-DD），不再各用各的本地化格式
+    generatedDate: todayDateKey(),
     currentRecord,
     records: sorted,
     averagePressure: avgPressure,

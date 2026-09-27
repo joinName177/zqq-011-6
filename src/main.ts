@@ -2,6 +2,7 @@ import './ui/styles.css';
 import { LocalStorageMoodAdapter } from './adapters/local-storage-mood.adapter';
 import { MeteorologyEngineAdapter } from './adapters/meteorology-engine.adapter';
 import { createRecordFromTag } from './core/meteorology-engine';
+import { compareDateKeys } from './core/date-utils';
 import { MoodRecord, SynopticChartData } from './core/models';
 import { renderWeatherApp } from './ui/app';
 import { summarizeMood, chartSummary } from './core/mood-summary';
@@ -53,8 +54,8 @@ function refreshView() {
         refreshView();
       },
       onSubmitLog: (tag: string, intensity: number, note: string) => {
-        const todayStr = new Date().toISOString().split('T')[0];
-        const newRecord = createRecordFromTag(tag, intensity, note, todayStr);
+        // 日期由核心层统一来源生成（本地今天），UI 不再自行做 UTC 换算
+        const newRecord = createRecordFromTag(tag, intensity, note);
         repo.add(newRecord);
         records = repo.getAll();
         chartData = metEngine.generateSynopticChart(records);
@@ -62,8 +63,8 @@ function refreshView() {
         refreshView();
       },
       onSelectRecord: (record: MoodRecord) => {
-        // Re-generate chart focusing on this record
-        const filtered = records.filter(r => r.date <= record.date);
+        // Re-generate chart focusing on this record（安全比较，非法日期不参与过滤）
+        const filtered = records.filter(r => compareDateKeys(r.date, record.date) <= 0);
         chartData = metEngine.generateSynopticChart(filtered.length > 0 ? filtered : records);
         chartData.currentRecord = record;
         refreshView();
